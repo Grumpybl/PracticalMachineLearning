@@ -1,0 +1,128 @@
+---
+title: "Practical Machine Learning Prediction Assignment Writeup"
+author: "Brian Lewis"
+date: "Thursday, July 23, 2015"
+output: html_document
+---
+
+## *SUMMARY*
+
+The goal of this project is to predict the manner in which a group of fitness enthusiasts performed exercises, based on devices such as Jawbone Up, Nike FuelBand, and Fitbit which make it possible to collect a large amount of data about personal activity relatively inexpensively.
+
+Using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  This is the "classe" variable in the training set.
+
+You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
+
+
+## *LOAD DATA*
+
+Load the training data (19,622 records and 160 variables).
+
+```{r load data}
+training <- read.csv("pml-training.csv", header=T, sep=",", na.strings=c("NA",""))
+testing <- read.csv("pml-testing.csv", header=T,sep=",", na.strings=c("NA",""))
+dim(training)
+```
+
+## *CLEAN DATA*
+Remove all variables with >=70% invalid data and summarize remaining training data (110 variables, leaving 60 variables). 
+
+```{r invalid data}
+validCol <- colSums(!is.na(training[,-ncol(training)]))>=0.7*nrow(training)
+training <- training[,validCol]
+testing <- testing[,validCol]
+dim(training)
+```
+
+Remove unnecessary columns (7 variables, leaving 53 variables, 52 predictors and 1 response).
+
+```{r unnecessary data}
+colRm_train <- c("X","user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","num_window", "new_window")
+training <- training[,!(names(training) %in% colRm_train)]
+testing <- testing[,!(names(training) %in% colRm_train)]
+dim(training)
+```
+## *CREATE VALIDATION DATA SET*
+
+Split the cleaned training data into a training set and a validation set.
+
+```{r validation set}
+library(caret)
+set.seed(53)
+InTrain <- createDataPartition(y=training$classe, p=0.7, list=FALSE)
+training <- training[InTrain,]
+validation <- training[-InTrain,]
+```
+
+## *CHOOSE MODEL*
+
+Check the correlations between the 52 predictors and the outcome variable, 'classe', in the  training set.
+
+```{r correlation}
+corr <- abs(sapply(colnames(training[, -ncol(training)]), function(x) cor(as.numeric(training[, x]), as.numeric(training$classe), method = "spearman")))
+print(corr)
+```
+
+Since none of the predictors show strong correlated with the outcome variable (the highest being r = 0.324 for 'pitch_forearm'), random forest modelling may be a better choice than linear regression modelling this data.
+
+## *MODEL USING RANDOM FOREST*
+
+Fit a model using the Random Forest Method.
+
+```{r random forest model}
+library(randomForest)
+set.seed(53)
+modelFit<-randomForest(classe~.,data=training,importance=TRUE)
+modelFit
+```
+
+
+## *EVALUATE MODEL FIT*
+
+Verify variable importance measures
+
+```{r variable importance}
+importance(modelFit)
+```
+
+Check model performance against validtion data.
+
+```{r model validation set}
+validation_pred <- predict(modelFit, newdata=validation)
+confusionMatrix(validation_pred,validation$classe)
+```
+
+Check model fit.
+
+```{r model fit}
+varImpPlot(modelFit)
+```
+
+Against the training data set the most important variables in the model are 'roll_belt', 'pitch_belt', and 'yaw_belt'. But, against the validation data set 'magnet_dumbbell_z' and 'pitch_forearm' are also important.
+
+Model accuracy versus the validation data set was 100%, 95% confidence interval = 99.91% - 100%.
+
+## *DETERMINE OUT OF SAMPLE ACCURACY*
+
+Run the model against the testing data to determine the out of sample accuracy.
+
+```{r model testing data}
+predictions <- predict(modelFit,newdata=testing)
+print(predictions)
+```
+
+Those 20 answers are all correct.
+
+## *CREATE FILES FOR COURSE PROJECT: SUBMISSION*
+
+```{r create submisssion files}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predictions)
+```
